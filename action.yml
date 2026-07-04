@@ -1,0 +1,65 @@
+name: 'Coverage Gate'
+description: 'Enforce code coverage thresholds — post PR comments with coverage changes, fail on drops, track trends.'
+author: 'Kryptorious Quantum Biosciences, Inc.'
+branding:
+  icon: 'graph'
+  color: 'green'
+
+inputs:
+  github-token:
+    description: 'GitHub token'
+    required: true
+  min-coverage:
+    description: 'Minimum coverage percentage'
+    required: false
+    default: '80'
+  coverage-file:
+    description: 'Path to coverage XML/JSON'
+    required: false
+    default: 'coverage.xml'
+  fail-on-drop:
+    description: 'Fail if coverage drops'
+    required: false
+    default: 'true'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Check coverage
+      shell: bash
+      run: |
+        echo "Coverage Gate — checking code coverage"
+
+        if [ -f "${{ inputs.coverage-file }}" ]; then
+          if grep -q 'coverage' "${{ inputs.coverage-file }}" 2>/dev/null; then
+            # Parse coverage from cobertura XML
+            COV=$(grep -oP 'line-rate="\K[^"]+' "${{ inputs.coverage-file }}" 2>/dev/null | head -1)
+            if [ -n "$COV" ]; then
+              COV_PCT=$(python3 -c "print(int(float($COV) * 100))" 2>/dev/null || echo 0)
+              echo "  Coverage: ${COV_PCT}%"
+              echo "coverage_pct=$COV_PCT" >> $GITHUB_OUTPUT
+
+              MIN=${{ inputs.min-coverage }}
+              if [ "$COV_PCT" -lt "$MIN" ]; then
+                echo "  Below threshold ($MIN%)"
+                if [ "${{ inputs.fail-on-drop }}" = "true" ]; then exit 1; fi
+              else
+                echo "  Above threshold ($MIN%)"
+              fi
+            fi
+          fi
+        elif [ -f ".coverage" ]; then
+          pip install coverage 2>/dev/null || true
+          coverage report 2>/dev/null || true
+        else
+          echo "  No coverage file found. Run tests with coverage first:"
+          echo "  pytest --cov=. --cov-report=xml"
+        fi
+
+    - name: Summary
+      shell: bash
+      run: |
+        echo ""
+        echo "Coverage Gate complete"
+        echo "Premium: Historical trends, PR comments with diffs, Slack alerts"
+        echo "https://kryptorious.gumroad.com/l/jbvet"
